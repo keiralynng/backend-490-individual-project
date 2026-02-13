@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 from flask import Flask, jsonify 
 from flask_cors import CORS 
 import mysql.connector 
@@ -139,7 +138,6 @@ def actor_Details(actor_id):
 
 if __name__ == "__main__": 
     app.run(port=5000, debug=True)
-=======
 from flask import Flask, jsonify 
 from flask_cors import CORS 
 import mysql.connector 
@@ -277,6 +275,3 @@ def actor_Details(actor_id):
 
 if __name__ == "__main__": 
     app.run(port=5000, debug=True)
-
-    
->>>>>>> bbbf5e474ceec896cd43d179bbcc34a05038e2bc
