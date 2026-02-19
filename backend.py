@@ -262,7 +262,7 @@ def rentFilm():
         VALUES (NOW(), %s, %s, 1)
 """, (inventory_id, customer_id))
     
-    #db.commit()   #uncomment if we want to permanently change the database but i dont think thats necessary for the moment
+    db.commit()   #uncomment if we want to permanently change the database but i dont think thats necessary for the moment
     cur.close()
     db.close()
 
