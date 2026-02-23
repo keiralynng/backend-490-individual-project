@@ -166,7 +166,7 @@ def filmsList():
         FROM film f
         JOIN film_category i ON f.film_id = i.film_id
         JOIN category c ON i.category_id = c.category_id
-        LEFT JOIN film_ACTOR fa ON f.film_id = fa.film_id
+        LEFT JOIN film_actor fa ON f.film_id = fa.film_id
         LEFT JOIN actor a ON fa.actor_id = a.actor_id
         WHERE 1=1
     """
@@ -261,12 +261,121 @@ def rentFilm():
         INSERT INTO rental (rental_date, inventory_id, customer_id, staff_id)
         VALUES (NOW(), %s, %s, 1)
 """, (inventory_id, customer_id))
-    
-    db.commit()   #uncomment if we want to permanently change the database but i dont think thats necessary for the moment
+
+    db.commit()
     cur.close()
     db.close()
-
     return jsonify({"message": "Film rented!"}), 200
+
+    
+#list of all customers
+@app.get("/api/customers")
+def getCustomers(): 
+    db = get_database()
+    cur = db.cursor(dictionary=True)
+
+    cur.execute("""
+        SELECT customer_id, first_name, last_name, email, active, create_date
+        FROM customer
+        ORDER BY last_name, first_name
+    """)
+
+    customers = cur.fetchall()
+
+    cur.close()
+    db.close()
+    return jsonify(customers)
+
+#get customer details and rental history 
+@app.get("/api/customers/<int:customer_id>")
+def get_customer_details(customer_id): 
+    db = get_database()
+    cur = db.cursor(dictionary=True)
+
+    #customer info 
+    cur.execute("""
+        SELECT customer_id, first_name, last_name, email, active, create_date
+        FROM customer
+        WHERE customer_id = %s
+        """, (customer_id,)) 
+    customer = cur.fetchone()
+
+    if not customer: 
+        cur.close()
+        db.close()
+        return jsonify({"error": "Customer was not found"}), 404
+
+    #rental history
+    cur.execute("""
+        SELECT
+            r.rental_id, 
+            r.rental_date, 
+            r.return_date, 
+            f.film_id,
+            f.title
+        FROM rental r 
+        JOIN inventory i ON i.inventory_id = r.inventory_id 
+        JOIN film f ON f.film_id = i.film_id 
+        WHERE r.customer_id = %s 
+        ORDER by r.rental_date DESC 
+                """, (customer_id,))
+    rentals = cur.fetchall()
+
+    cur.close()
+    db.close()
+    return jsonify({"customer": customer, "rentals": rentals})
+
+#rental must be marked as returned 
+@app.patch("/api/rentals/<int:rental_id>/return")
+def return_rental(rental_id):
+    db = get_database()
+    cur = db.cursor(dictionary=True)
+    
+    cur.execute("""
+        SELECT rental_id
+        FROM rental
+        WHERE rental_id = %s AND return_date is NULL
+        """, (rental_id,))
+    rental = cur.fetchone()
+
+    if not rental: 
+        cur.close()
+        db.close()
+        return jsonify({"error:" "Rental is not found or is already returned."}), 404
+    
+    cur.execute("""
+        UPDATE rental
+        SET return_date = NOW()
+        WHERE rental_id = %s
+        """, (rental_id,))
+    db.commit()
+
+    cur.close()
+    db.close()
+    return jsonify({"message:" "Rental marked as returned"}), 200
+
+#delete customer and data from data 
+@app.delete("/api/customers/<int:customer_id>")
+def delete_customer(customer_id):
+    db = get_database()
+    cur = db.cursor(dictionary=True)
+
+    #if customer doesnt exist
+    cur.execute("SELECT customer_id FROM customer WHERE customer_id = %s", (customer_id,))
+    if not cur.fetchone(): 
+        cur.close()
+        db.close()
+        return jsonify({"Error": "Customer not found."}), 404
+
+
+    cur.execute("DELETE FROM payment WHERE customer_id = %s", (customer_id,))
+    cur.execute("DELETE FROM rental WHERE customer_id = %s", (customer_id,))
+    cur.execute("DELETE FROM customer WHERE customer_id = %s", (customer_id,))
+    db.commit()
+
+    cur.close()
+    db.close()
+    return jsonify({"message:" "Customer deleted."}), 200
 
 if __name__ == "__main__": 
     app.run(port=5000, debug=True)
