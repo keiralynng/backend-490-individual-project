@@ -269,22 +269,68 @@ def rentFilm():
 
     
 #list of all customers
+#includes search and pagination
 @app.get("/api/customers")
 def getCustomers(): 
     db = get_database()
     cur = db.cursor(dictionary=True)
+    search = request.args.get("search")
 
-    cur.execute("""
-        SELECT customer_id, first_name, last_name, email, active, create_date
+    #making pages again
+    page = request.args.get("page", default=1, type=int)
+    limit = 18 #18 customers per page
+    offset = (page - 1) * limit
+
+    from_query = """
         FROM customer
-        ORDER BY last_name, first_name
-    """)
+     """
 
+    where_query = ""
+
+    param = []
+
+    if search:
+        where_query += """
+            WHERE first_name LIKE %s
+            OR last_name LIKE %s
+        """
+        like_term = f"%{search}%"
+        param.extend([like_term, like_term])
+
+        if search.isdigit():
+            where_query += "OR customer_id = %s"
+            param.append(int(search))
+
+    # first query for total count
+    total_query = "SELECT COUNT(*) as total " + from_query + where_query
+    cur.execute(total_query, tuple(param))
+    total = cur.fetchone()["total"]
+
+    # second query for data
+    data_query = """
+        SELECT
+            customer_id,
+            first_name,
+            last_name,
+            email,
+            active,
+            create_date
+    """ + from_query + where_query + """
+            ORDER BY last_name, first_name
+            LIMIT %s OFFSET %s
+    """
+
+    cur.execute(data_query, tuple(param + [limit, offset]))
     customers = cur.fetchall()
 
     cur.close()
     db.close()
-    return jsonify(customers)
+    return jsonify({
+        "customers": customers,
+        "total": total,
+        "page": page,
+        "pages": (total + limit - 1) // limit
+    })
 
 #get customer details and rental history 
 @app.get("/api/customers/<int:customer_id>")
@@ -376,6 +422,67 @@ def delete_customer(customer_id):
     cur.close()
     db.close()
     return jsonify({"message:" "Customer deleted."}), 200
+
+@app.post("/api/customers")
+def add_customer():
+    db = get_database()
+    cur = db.cursor(dictionary=True)
+    data = request.json
+
+    #just validating if everything is filled out
+    if not data.get("first_name") or not data.get("last_name") or not data.get("email"):
+        return jsonify({"error": "Missing required files"}), 400
+    
+    query = """
+        INSERT INTO customer
+        (first_name, last_name, email, active, create_date, store_id, address_id)
+        VALUES (%s, %s, %s, %s, NOW(), 1, 1)
+    """
+    
+    cur.execute(query, (
+        data["first_name"],
+        data["last_name"],
+        data["email"],
+        data.get("active", 1)
+    ))
+
+    db.commit()
+
+    new_id = cur.lastrowid
+
+    cur.close()
+    db.close()
+
+    return jsonify({
+        "message": "Customer created successfully",
+        "customer_id": new_id
+    }), 201
+
+
+@app.put("/api/customers/<int:customer_id>")
+def update_customer(customer_id):
+    db = get_database()
+    cur = db.cursor()
+    data = request.get_json()
+
+    first_name = data.get("first_name") or None
+    last_name = data.get("last_name") or None
+    email = data.get("email") or None
+
+    post_query = """
+        UPDATE customer
+        SET first_name = COALESCE(%s, first_name),
+            last_name = COALESCE(%s, last_name),
+            email = COALESCE(%s, email)
+        WHERE customer_id = %s
+    """
+
+    cur.execute(post_query, (first_name, last_name, email, customer_id))
+    db.commit()
+
+    cur.close()
+    db.close()
+    return jsonify({"message": "Customer Updated"})
 
 if __name__ == "__main__": 
     app.run(port=5000, debug=True)
